@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <meta charset="utf-8">
+      <title>PDF to MusicXML with audiveris</title>
+      <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1" crossorigin="anonymous">
+   </head>
+   <body>
+      <div>
+         <h1>PDF-to-MusicXML converter with Audiveris</h1>
+         <p>This app converts a pdf file (music note image) into a .mxl-file with Audiveris. I've used the Docker image <a href='https://hub.docker.com/r/toprock/audiveris'>toprock/audiveris</a> (slightly changed). This conversion process takes several minutes (and i recommend to use only a very small pdf file). So keep calm & be patient...</p>
+      </div>
+      <form method="POST" action="/" enctype="multipart/form-data">
+         {{ form.hidden_tag() }}
+         <div class="form-file">
+            {{ form.pdf(class="form-file-input") }}
+         </div>
+         <button type="submit" class="btn btn-primary">Submit</button>
+      </form>
+
+      {% if form.pdf.errors %}
+         <div class="alert alert-warning">
+            {% for error in form.pdf.errors %}
+               <span>{{ error }}</span>
+            {% endfor %}
+         </div>
+      {% endif %}
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+         {% if messages %}
+            {% for category, message in messages %}
+               <div class="alert alert-success">{{ message }}</div>
+            {% endfor %}
+         {% endif %}
+      {% endwith %}
+
+
+   </body>
+</html>

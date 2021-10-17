@@ -1,0 +1,41 @@
+version: "3"
+services:
+    web:
+        container_name: flask
+        build: 
+            context: ./
+            dockerfile: flask.dockerfile
+        working_dir: /code
+        restart: always
+        command: >
+            bash -c "
+                pip install -r requirements.txt &&
+                python ./src/main.py
+            "
+        ports: 
+            - 127.0.0.1:8888:8888
+        volumes:
+            - .:/code
+            - /var/run/docker.sock:/var/run/docker.sock
+            - media_share:/code/src/mediafiles
+            - output_share:/code/src/output
+        
+        
+    
+    audiveris:
+        container_name: audiveris
+        build:
+            context: ./
+            dockerfile: audiveris.dockerfile
+        tty: true
+        volumes:
+            - media_share:/input
+            - output_share:/output
+
+
+
+volumes:
+    media_share:
+      external: false
+    output_share:
+      external: false
