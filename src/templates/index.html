@@ -2,13 +2,13 @@
 <html>
    <head>
       <meta charset="utf-8">
-      <title>Image to MusicXML with audiveris</title>
+      <title>PDF to MusicXML with audiveris</title>
       <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1" crossorigin="anonymous">
    </head>
    <body>
       <div>
-         <h1>Image-to-MusicXML converter with Audiveris</h1>
-         <p>This app converts an image file (music note image in pdf, jpg, png and tif format) into a .mxl-file with <a href='https://github.com/Audiveris/audiveris'>Audiveris</a>. I've used the Docker image <a href='https://hub.docker.com/r/toprock/audiveris'>toprock/audiveris</a> (slightly changed). The conversion process may take several minutes (and It is recommended to use only a very small image file). So keep calm & be patient...</p>
+         <h1 class="badge bg-dark text-wrap fs-1">PDF-to-MusicXML converter with Audiveris</h1>
+         <p class="bg-light text-wrap fs-4">This app converts an image file (music note image in pdf format) into a .mxl-file with <a href='https://github.com/Audiveris/audiveris'>Audiveris</a>. I've used the Docker image <a href='https://hub.docker.com/r/toprock/audiveris'>toprock/audiveris</a> (slightly changed). The conversion process may take several minutes (and It is recommended to use only a very small image file). So keep calm & be patient...</p>
       </div>
       
       <form method="POST" action="/" enctype="multipart/form-data">

@@ -1,5 +1,5 @@
 # image-to-mxl-converter
-This app converts an image file (music note image in pdf, jpg, png and tif format) into a .mxl-file with [Audiveris (stable version)](https://github.com/Audiveris/audiveris). I've used the Docker image [toprock/audiveris](https://hub.docker.com/r/toprock/audiveris) (slightly changed). The conversion process may take several minutes (and it is recommended to use only a very small image file). So keep calm & be patient...
+This app converts an image file (music note image in pdf format) into a .mxl-file with [Audiveris (stable version)](https://github.com/Audiveris/audiveris). I've used the Docker image [toprock/audiveris](https://hub.docker.com/r/toprock/audiveris) (slightly changed). The conversion process may take several minutes (and it is recommended to use only a very small image file). So keep calm & be patient...
 
 
 ## Requirements
