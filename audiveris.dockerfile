@@ -5,7 +5,7 @@ RUN apk update && apk add openjdk11 \
         tesseract-ocr  \
 		ttf-dejavu \
 		tar
-RUN git clone --branch development https://github.com/Audiveris/audiveris.git && \
+RUN git clone https://github.com/Audiveris/audiveris.git && \
         cd audiveris && \
         ./gradlew build && \
 		mkdir /Audiveris && \

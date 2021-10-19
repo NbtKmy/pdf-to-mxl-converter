@@ -37,7 +37,7 @@ def main():
         
         client = docker.from_env()
         audi_cont = client.containers.get('audiveris')
-        cmd = '/bin/sh -c "/Audiveris/bin/Audiveris -batch -export -output /output /input/*.pdf"'
+        cmd = '/bin/sh -c "/Audiveris/bin/Audiveris -batch -export -output /output /input/*"'
         proc = audi_cont.exec_run(cmd)
 
         filename_naked = os.path.splitext(filename)[0]

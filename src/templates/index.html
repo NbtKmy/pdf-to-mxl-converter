@@ -7,8 +7,8 @@
    </head>
    <body>
       <div>
-         <h1>PDF-to-MusicXML converter with Audiveris</h1>
-         <p>This app converts a pdf file (music note image) into a .mxl-file with Audiveris. I've used the Docker image <a href='https://hub.docker.com/r/toprock/audiveris'>toprock/audiveris</a> (slightly changed). This conversion process takes several minutes (and i recommend to use only a very small pdf file). So keep calm & be patient...</p>
+         <h1>Image-to-MusicXML converter with Audiveris</h1>
+         <p>This app converts a image file (music note image in pdf, jpg, png and tif format) into a .mxl-file with <a href='https://github.com/Audiveris/audiveris'>Audiveris</a>. I've used the Docker image <a href='https://hub.docker.com/r/toprock/audiveris'>toprock/audiveris</a> (slightly changed). This conversion process takes several minutes (and i recommend to use only a very small pdf file). So keep calm & be patient...</p>
       </div>
       <form method="POST" action="/" enctype="multipart/form-data">
          {{ form.hidden_tag() }}
