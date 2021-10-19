@@ -1,5 +1,5 @@
 # image-to-mxl-converter
-This app converts a pdf file (music note image) into a .mxl-file with [Audiveris (stable version)] (https://github.com/Audiveris/audiveris). I've used the Docker image [toprock/audiveris] (https://hub.docker.com/r/toprock/audiveris') (slightly changed). This conversion process takes several minutes (and i recommend to use only a very small pdf file). So keep calm & be patient...
+This app converts a pdf file (music note image) into a .mxl-file with [Audiveris (stable version)](https://github.com/Audiveris/audiveris). I've used the Docker image [toprock/audiveris](https://hub.docker.com/r/toprock/audiveris) (slightly changed). This conversion process may take several minutes (and i recommend to use only a very small image file). So keep calm & be patient...
 
 
 ## Requirements
@@ -21,7 +21,7 @@ And go into the directory which you just cloned.
 And there put the command:
 
 ```
-docker-compose up --build -d
+docker-compose up -d
 ```
 
 Then 2 containers (flask and audiveris) are build and started.
