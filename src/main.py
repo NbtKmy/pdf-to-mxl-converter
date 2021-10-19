@@ -5,7 +5,7 @@ import docker
 import os
 import shutil
 
-from formTemplate import pdfUpload
+from formTemplate import imageUpload
 
 UPLOAD_FOLDER = '/code/src/mediafiles'
 OUTPUT_FOLDER = '/code/src/output'
@@ -17,7 +17,7 @@ server.config['SECRET_KEY'] = 'your_secret_key'
 
 @server.route('/', methods=['GET', 'POST'])
 def main():
-    form = pdfUpload()
+    form = imageUpload()
 
     if form.validate_on_submit():
 
@@ -30,7 +30,7 @@ def main():
             if os.path.isdir(d):
                 shutil.rmtree(d)
         
-        x = form.pdf.data
+        x = form.img.data
         filename = secure_filename(x.filename)
         x.save(os.path.join(server.config['UPLOAD_FOLDER'], filename))
         flash(filename + ' is uploaded!')
@@ -44,7 +44,7 @@ def main():
         download_path = OUTPUT_FOLDER + '/' + filename_naked + '/*.mxl'
         mxl_files = glob.glob(download_path)
         mxl_file = mxl_files[0]
-        flash(mxl_files)
+        # flash(mxl_files)
         
         
         if proc[0] == 0:
