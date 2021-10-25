@@ -17,8 +17,6 @@ COPY ./requirements.txt $HOME
 
 # install dependencies
 RUN pip install -r requirements.txt
-    # apt update && \
-    # apt install docker docker-compose
 
 # Copy the codes and templates into the workdir
 COPY ./src/ $HOME
