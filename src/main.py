@@ -41,18 +41,17 @@ def main():
         proc = audi_cont.exec_run(cmd)
 
         filename_naked = os.path.splitext(filename)[0]
-        download_path = OUTPUT_FOLDER + '/' + filename_naked + '/*.mxl'
-        mxl_files = glob.glob(download_path)
-        mxl_file = mxl_files[0]
-        # flash(mxl_files)
-        
-        
-        if proc[0] == 0:
-            return send_file(mxl_file, as_attachment = True, mimetype = 'application/vnd.recordare.musicxml')
+        mxl_files = glob.glob(OUTPUT_FOLDER + '/' + filename_naked + '.mxl')
+
+        if proc[0] == 0 and mxl_files:
+            return send_file(mxl_files[0], as_attachment=True, mimetype='application/vnd.recordare.musicxml')
+
+        flash('Audiveris could not produce a MusicXML file.')
+        if proc[0] != 0:
+            flash(f'audiveris exited with code {proc[0]}')
         else:
-            flash('An error occured...')
-            flash(proc[0])
-            return redirect(url_for('main', form=form))
+            flash('Transcription likely failed (e.g. unrecognised rhythm). Try a simpler score; the .log file in /output has details.')
+        return redirect(url_for('main', form=form))
         
 
     return render_template('index.html', form=form)
