@@ -1,14 +1,14 @@
-# image-to-mxl-converter
-This app converts an image file (music note image in pdf format) into a .mxl-file with [Audiveris (stable version)](https://github.com/Audiveris/audiveris). I've used the Docker image [toprock/audiveris](https://hub.docker.com/r/toprock/audiveris) (slightly changed). The conversion process may take several minutes (and it is recommended to use only a very small image file). So keep calm & be patient...
+# pdf-to-mxl-converter
+This app converts a music score PDF into a `.mxl` file with [Audiveris](https://github.com/Audiveris/audiveris). The Audiveris container is built directly from the upstream sources, currently pinned to **Audiveris 5.10.2** (which requires Java 25 — installed inside the container, no host setup needed). The conversion process may take several minutes (and it is recommended to use only a very small file). So keep calm & be patient...
+
+> Note: the very first `docker compose up` builds Audiveris from source, which downloads Gradle and all dependencies. Expect the initial build to take a while; subsequent runs reuse the cached image.
 
 
 ## Requirements
 
 You need:
 
-[Docker](https://docs.docker.com/)
-
-[Docker-compose](https://docs.docker.com/compose/)
+[Docker](https://docs.docker.com/) (with Compose v2 — `docker compose`)
 
 ## Usage
 Clone this repo:
@@ -21,12 +21,18 @@ And go into the directory which you just cloned.
 And there put the command:
 
 ```
-docker-compose up -d
+docker compose up -d
 ```
 
-Then 2 containers (flask and audiveris) are build and started.
+Then 2 containers (`flask` and `audiveris`) are built and started.
 
-You find the web app in the browser under 'localhost:8888'
+You find the web app in the browser under `http://localhost:8888`.
+
+To upgrade Audiveris to a different release, override the build arg:
+
+```
+docker compose build --build-arg AUDIVERIS_REF=<tag> audiveris
+```
 
 ## Flask configuration
 [Flask](https://flask.palletsprojects.com/en/2.0.x/) is used for this web app. 
