@@ -44,7 +44,11 @@ def main():
         mxl_files = glob.glob(OUTPUT_FOLDER + '/' + filename_naked + '.mxl')
 
         if proc[0] == 0 and mxl_files:
-            return send_file(mxl_files[0], as_attachment=True, mimetype='application/vnd.recordare.musicxml')
+            response = make_response(send_file(mxl_files[0], as_attachment=True, mimetype='application/vnd.recordare.musicxml'))
+            token = request.form.get('download_token', '')
+            if token:
+                response.set_cookie('download_token', token, max_age=60, path='/')
+            return response
 
         flash('Audiveris could not produce a MusicXML file.')
         if proc[0] != 0:
