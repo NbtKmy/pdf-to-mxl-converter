@@ -4,5 +4,5 @@ Jinja2==3.0.2
 MarkupSafe==2.0.1
 Werkzeug==2.0.2
 WTForms==2.3.3
-docker==5.0.3
+docker==7.1.0
 

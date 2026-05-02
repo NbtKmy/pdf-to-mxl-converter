@@ -27,3 +27,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /Audiveris /Audiveris
 RUN mkdir /input /output
+
+CMD ["sleep", "infinity"]
