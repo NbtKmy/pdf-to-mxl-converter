@@ -1,28 +1,29 @@
-FROM alpine as builder
+# syntax=docker/dockerfile:1
+FROM eclipse-temurin:25-jdk AS builder
 
-RUN apk update && apk add openjdk11 \
+ARG AUDIVERIS_REF=5.10.2
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
-        tesseract-ocr  \
-		ttf-dejavu \
-		tar
-RUN git clone https://github.com/Audiveris/audiveris.git && \
-        cd audiveris && \
-        ./gradlew build && \
-		mkdir /Audiveris && \
-        tar -xvf /audiveris/build/distributions/Audiveris.tar -C /Audiveris  &&\
-        mkdir /output &&\
-        mkdir /input
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-FROM alpine 
-COPY --from=builder /Audiveris/ /
-RUN apk update && apk add openjdk11-jre \
+WORKDIR /src
+RUN git clone --depth 1 --branch ${AUDIVERIS_REF} https://github.com/Audiveris/audiveris.git
+WORKDIR /src/audiveris
+RUN ./gradlew --no-daemon :app:distTar -x test
+RUN mkdir /Audiveris && \
+    tar -xf app/build/distributions/*.tar -C /Audiveris --strip-components=1
+
+FROM eclipse-temurin:25-jre
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr \
-        tesseract-ocr-data-deu \
-        tesseract-ocr-data-fra \
-		font-bh-ttf \
-		libuuid && \
-		ln -s /usr/lib/libfontconfig.so.1 /usr/lib/libfontconfig.so && \
-		ln -s /lib/libuuid.so.1 /usr/lib/libuuid.so.1 && \
-		ln -s /lib/libc.musl-x86_64.so.1 /usr/lib/libc.musl-x86_64.so.1
-ENV LD_LIBRARY_PATH /usr/lib
+        tesseract-ocr-deu \
+        tesseract-ocr-fra \
+        fontconfig \
+        fonts-dejavu \
+    && rm -rf /var/lib/apt/lists/*
 
+COPY --from=builder /Audiveris /Audiveris
+RUN mkdir /input /output
