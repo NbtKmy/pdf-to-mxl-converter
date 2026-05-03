@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# runtime workdirs
+src/mediafiles/*
+src/output/*
+!src/mediafiles/.gitkeep
+!src/output/.gitkeep
+
+# crash artefacts (e.g. Verovio C++ aborts in worker subprocess)
+core
+core.*

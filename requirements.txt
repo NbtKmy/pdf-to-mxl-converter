@@ -1,8 +1,8 @@
-Flask==2.0.2
-Flask-WTF==0.15.1
-Jinja2==3.0.2
-MarkupSafe==2.0.1
-Werkzeug==2.0.2
-WTForms==2.3.3
+Flask==3.0.3
+Flask-WTF==1.2.1
+Jinja2==3.1.4
+MarkupSafe==2.1.5
+Werkzeug==3.0.4
+WTForms==3.1.2
 docker==7.1.0
-
+verovio==5.1.0
