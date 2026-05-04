@@ -12,3 +12,10 @@ src/output/*
 # crash artefacts (e.g. Verovio C++ aborts in worker subprocess)
 core
 core.*
+
+
+# test data
+*.pdf
+*.mei
+pdf-to-mxl-converter-refactor-plan.md
+

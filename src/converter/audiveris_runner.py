@@ -8,7 +8,7 @@ import docker
 AUDIVERIS_CONTAINER = "audiveris"
 AUDIVERIS_CMD = (
     '/bin/sh -c "/Audiveris/bin/Audiveris '
-    '-batch -export -output /output /input/*"'
+    '-batch -export -save -output /output /input/*"'
 )
 
 
