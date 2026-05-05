@@ -1,4 +1,5 @@
 from .audiveris_runner import AudiverisError, AudiverisResult, run_audiveris
+from .image_loader import pdf_to_pngs
 from .mei_writer import inject_facsimile, musicxml_to_mei
 from .omr_parser import (
     MeasureZone,
@@ -20,5 +21,6 @@ __all__ = [
     "iter_zones",
     "musicxml_to_mei",
     "parse_omr",
+    "pdf_to_pngs",
     "run_audiveris",
 ]

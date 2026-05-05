@@ -6,10 +6,6 @@ from dataclasses import dataclass
 import docker
 
 AUDIVERIS_CONTAINER = "audiveris"
-AUDIVERIS_CMD = (
-    '/bin/sh -c "/Audiveris/bin/Audiveris '
-    '-batch -export -save -output /output /input/*"'
-)
 
 
 class AudiverisError(RuntimeError):
@@ -25,14 +21,20 @@ class AudiverisResult:
     log: str
 
 
-def run_audiveris() -> AudiverisResult:
-    """Invoke Audiveris on /input/* inside the container.
+def run_audiveris(input_dir: str = "/input", output_dir: str = "/output") -> AudiverisResult:
+    """Invoke Audiveris on ``<input_dir>/*`` inside the audiveris container.
 
-    Audiveris produces the exported MusicXML (.mxl) under /output. The host
-    side mounts that folder so we can read it immediately after the call.
+    Audiveris writes ``.mxl`` and ``.omr`` artifacts under ``<output_dir>``.
+    Both paths are container-absolute (the audiveris container side); the
+    flask container is responsible for ensuring those paths resolve to the
+    expected job-scoped directories via the shared named volumes.
     """
+    cmd = (
+        f'/bin/sh -c "/Audiveris/bin/Audiveris '
+        f'-batch -export -save -output {output_dir} {input_dir}/*"'
+    )
     client = docker.from_env()
     container = client.containers.get(AUDIVERIS_CONTAINER)
-    exit_code, output = container.exec_run(AUDIVERIS_CMD)
+    exit_code, output = container.exec_run(cmd)
     log = output.decode(errors="replace") if output else ""
     return AudiverisResult(exit_code=exit_code, log=log)

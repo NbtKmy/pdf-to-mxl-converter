@@ -5,4 +5,6 @@ MarkupSafe==2.1.5
 Werkzeug==3.0.4
 WTForms==3.1.2
 docker==7.1.0
+lxml==5.3.0
+pymupdf==1.24.10
 verovio==5.1.0
