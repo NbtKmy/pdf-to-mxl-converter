@@ -218,8 +218,11 @@
       }
       .format-segments {
          display: grid;
-         grid-template-columns: 1fr 1fr;
+         grid-template-columns: repeat(3, 1fr);
          gap: 0.6rem;
+      }
+      @media (max-width: 540px) {
+         .format-segments { grid-template-columns: 1fr; }
       }
       .format-segments input[type="radio"] {
          position: absolute;
@@ -407,7 +410,7 @@
          <h1>Turn a score PDF into <em>MEI</em>.</h1>
          <p>
             Powered by <a href="https://github.com/Audiveris/audiveris" target="_blank" rel="noopener">Audiveris 5.10.2</a>.
-            Output is ready to load into omr_xml_editor for human correction against your original score.
+            The editor pairs the original page image with the recognised score side by side.
             Conversion takes a couple of minutes &mdash; small, clean scores work best.
          </p>
       </div>
@@ -432,15 +435,20 @@
          <div class="format-row">
             <span class="field-label">Output format</span>
             <div class="format-segments" role="radiogroup">
-               <input type="radio" name="output_format" id="fmt-mei" value="mei" checked>
+               <input type="radio" name="output_format" id="fmt-edit" value="edit" checked>
+               <label for="fmt-edit">
+                  <span class="pill-title">Open editor</span>
+                  <span class="pill-sub">view image + score</span>
+               </label>
+               <input type="radio" name="output_format" id="fmt-mei" value="mei">
                <label for="fmt-mei">
                   <span class="pill-title">MEI</span>
-                  <span class="pill-sub">for omr_xml_editor</span>
+                  <span class="pill-sub">download .mei</span>
                </label>
                <input type="radio" name="output_format" id="fmt-mxl" value="mxl">
                <label for="fmt-mxl">
                   <span class="pill-title">MusicXML</span>
-                  <span class="pill-sub">raw .mxl from Audiveris</span>
+                  <span class="pill-sub">download .mxl</span>
                </label>
             </div>
          </div>

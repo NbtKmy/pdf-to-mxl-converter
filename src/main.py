@@ -36,6 +36,7 @@ UPLOAD_FOLDER = '/code/src/mediafiles'
 OUTPUT_FOLDER = '/code/src/output'
 AUDIVERIS_INPUT_ROOT = '/input'
 AUDIVERIS_OUTPUT_ROOT = '/output'
+EDITOR_DIST = Path(__file__).parent / 'editor' / 'dist'
 
 server = Flask(__name__)
 server.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -139,6 +140,12 @@ def convert():
     mei_path = output_dir / f'{naked}.mei'
     mei_path.write_text(mei_xml, encoding='utf-8')
 
+    if output_format == 'edit':
+        return _attach_token(
+            make_response(redirect(url_for('editor_index', job_id=job_id))),
+            token,
+        )
+
     return _attach_token(
         make_response(send_file(
             mei_path,
@@ -185,6 +192,34 @@ def job_source(job_id: str, filename: str):
     if not output_dir.is_dir():
         abort(404)
     return send_from_directory(output_dir, filename)
+
+
+@server.route('/edit/<job_id>')
+def editor_index_no_slash(job_id: str):
+    # Trailing slash so the SPA's relative asset paths resolve to /edit/<job_id>/assets/...
+    return redirect(url_for('editor_index', job_id=job_id))
+
+
+@server.route('/edit/<job_id>/')
+def editor_index(job_id: str):
+    if not _job_output_dir(job_id).is_dir():
+        abort(404)
+    index_path = EDITOR_DIST / 'index.html'
+    if not index_path.is_file():
+        abort(503, description=(
+            'Editor build is missing. Run `bun run build` inside src/editor/.'
+        ))
+    return send_file(index_path, mimetype='text/html')
+
+
+@server.route('/edit/<job_id>/assets/<path:filename>')
+def editor_assets(job_id: str, filename: str):
+    # job_id is intentionally unused — assets are shared across all jobs.
+    del job_id
+    assets_dir = EDITOR_DIST / 'assets'
+    if not assets_dir.is_dir():
+        abort(404)
+    return send_from_directory(assets_dir, filename)
 
 
 @server.route('/health')

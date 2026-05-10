@@ -11,8 +11,9 @@ class imageUpload(FlaskForm):
     output_format = RadioField(
         'Output format',
         choices=[
-            ('mei', 'MEI (with facsimile)'),
-            ('mxl', 'MusicXML (.mxl)'),
+            ('edit', 'Open in editor'),
+            ('mei', 'Download MEI'),
+            ('mxl', 'Download MusicXML'),
         ],
-        default='mei',
+        default='edit',
     )

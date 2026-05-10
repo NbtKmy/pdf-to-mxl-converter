@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import docker
+from docker.errors import NotFound
 
 AUDIVERIS_CONTAINER = "audiveris"
 
@@ -21,6 +22,20 @@ class AudiverisResult:
     log: str
 
 
+def _ensure_running(client: docker.DockerClient):
+    try:
+        container = client.containers.get(AUDIVERIS_CONTAINER)
+    except NotFound as exc:
+        raise RuntimeError(
+            f"audiveris container '{AUDIVERIS_CONTAINER}' is not present. "
+            "Run `docker compose up` first."
+        ) from exc
+    if container.status != "running":
+        container.start()
+        container.reload()
+    return container
+
+
 def run_audiveris(input_dir: str = "/input", output_dir: str = "/output") -> AudiverisResult:
     """Invoke Audiveris on ``<input_dir>/*`` inside the audiveris container.
 
@@ -28,13 +43,17 @@ def run_audiveris(input_dir: str = "/input", output_dir: str = "/output") -> Aud
     Both paths are container-absolute (the audiveris container side); the
     flask container is responsible for ensuring those paths resolve to the
     expected job-scoped directories via the shared named volumes.
+
+    The audiveris container is a long-lived sibling that we ``exec_run`` into
+    per job. It can be killed (OOM, Docker Desktop restart) between jobs, so
+    we re-start it if needed before exec'ing.
     """
     cmd = (
         f'/bin/sh -c "/Audiveris/bin/Audiveris '
         f'-batch -export -save -output {output_dir} {input_dir}/*"'
     )
     client = docker.from_env()
-    container = client.containers.get(AUDIVERIS_CONTAINER)
+    container = _ensure_running(client)
     exit_code, output = container.exec_run(cmd)
     log = output.decode(errors="replace") if output else ""
     return AudiverisResult(exit_code=exit_code, log=log)
