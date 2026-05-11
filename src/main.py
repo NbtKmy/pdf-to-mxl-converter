@@ -22,6 +22,7 @@ from flask import (
 from werkzeug.utils import secure_filename
 
 from converter import (
+    AudiverisResult,
     inject_facsimile,
     musicxml_to_mei,
     parse_omr,
@@ -62,6 +63,65 @@ def _find_one(directory: Path, pattern: str) -> Path | None:
     return matches[0] if matches else None
 
 
+def _extract_log_tail(log: str, n: int = 3) -> str:
+    """Pick the most diagnostic lines from Audiveris stdout for user display.
+
+    Prefer lines that look like errors; fall back to the last few non-empty
+    lines if no error keywords match.
+    """
+    if not log:
+        return ''
+    lines = [line.rstrip() for line in log.splitlines() if line.strip()]
+    if not lines:
+        return ''
+    keywords = ('ERROR', 'Exception', 'SEVERE', 'FATAL', 'Caused by')
+    flagged = [line for line in lines if any(kw in line for kw in keywords)]
+    picked = (flagged or lines)[-n:]
+    return ' | '.join(picked)
+
+
+def _diagnose_audiveris_output(
+    result: AudiverisResult,
+    output_dir: Path,
+    naked: str,
+    job_id: str,
+) -> list[str] | None:
+    """Return a list of user-facing flash messages, or None on success.
+
+    Distinguishes:
+    - Audiveris crashed (non-zero exit)
+    - Audiveris ran but produced no .mxl at all (unreadable score)
+    - Audiveris produced .mxl files under unexpected names (multi-section split)
+    """
+    if result.exit_code != 0:
+        msgs = [f'Audiveris crashed (exit code {result.exit_code}).']
+        tail = _extract_log_tail(result.log)
+        if tail:
+            msgs.append(f'Last lines: {tail}')
+        msgs.append(f'Full log saved under src/output/{job_id}/ (look for *.log).')
+        return msgs
+
+    all_mxl = sorted(output_dir.glob('*.mxl'))
+    if not all_mxl:
+        return [
+            'Audiveris finished without crashing but could not extract any musical notation.',
+            'This usually means hand-written, pre-modern (mensural / neumatic), '
+            'or severely degraded scores. Preprocessing rarely helps in these cases.',
+            f'Full log saved under src/output/{job_id}/ (look for *.log).',
+        ]
+
+    expected = output_dir / f'{naked}.mxl'
+    if not expected.is_file():
+        names = ', '.join(p.name for p in all_mxl)
+        return [
+            f'Audiveris split this score into {len(all_mxl)} sections: {names}.',
+            'Multi-section scores (separate movements, parallel parts, or '
+            'multiple works in one book) are not yet supported in this version.',
+            'For now try converting one page or one work at a time.',
+        ]
+    return None
+
+
 @server.route('/', methods=['GET'])
 def main():
     form = imageUpload()
@@ -94,18 +154,14 @@ def convert():
         output_dir=f'{AUDIVERIS_OUTPUT_ROOT}/{job_id}',
     )
     naked = os.path.splitext(filename)[0]
-    mxl_path = _find_one(output_dir, f'{naked}.mxl')
 
-    if result.exit_code != 0 or mxl_path is None:
-        flash('Audiveris could not produce a MusicXML file.')
-        if result.exit_code != 0:
-            flash(f'audiveris exited with code {result.exit_code}')
-        else:
-            flash(
-                'Transcription likely failed (e.g. unrecognised rhythm). '
-                'Try a simpler score; the .log file in /output has details.'
-            )
+    diagnosis = _diagnose_audiveris_output(result, output_dir, naked, job_id)
+    if diagnosis is not None:
+        for line in diagnosis:
+            flash(line)
         return redirect(url_for('main'))
+
+    mxl_path = output_dir / f'{naked}.mxl'
 
     if output_format == 'mxl':
         return _attach_token(
