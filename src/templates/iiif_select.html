@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="utf-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+   <title>{{ manifest.label }} · IIIF page selection</title>
+   <link rel="preconnect" href="https://fonts.googleapis.com">
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,700;1,500&display=swap" rel="stylesheet">
+   <style>
+      :root {
+         --bg-1: #0b1020;
+         --bg-2: #1a1438;
+         --bg-3: #2c1052;
+         --accent-1: #7c5cff;
+         --accent-2: #ff5cae;
+         --accent-3: #5cd6ff;
+         --text: #f3f0ff;
+         --text-dim: #b3aac8;
+         --text-mute: #7d7596;
+         --card: rgba(255, 255, 255, 0.04);
+         --card-border: rgba(255, 255, 255, 0.09);
+         --danger: #ff7a8a;
+         --success: #6bf0c5;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+         margin: 0; padding: 0; min-height: 100vh;
+         font-family: 'Inter', system-ui, -apple-system, sans-serif;
+         color: var(--text);
+         background: var(--bg-1);
+      }
+      body::before {
+         content: '';
+         position: fixed; inset: 0;
+         background:
+            radial-gradient(ellipse 80% 60% at 20% 10%, rgba(124, 92, 255, 0.32) 0%, transparent 60%),
+            radial-gradient(ellipse 70% 50% at 80% 90%, rgba(255, 92, 174, 0.22) 0%, transparent 55%),
+            radial-gradient(ellipse 60% 40% at 90% 20%, rgba(92, 214, 255, 0.18) 0%, transparent 60%),
+            linear-gradient(160deg, var(--bg-1) 0%, var(--bg-2) 50%, var(--bg-3) 100%);
+         z-index: -2;
+      }
+      .page {
+         max-width: 1240px;
+         margin: 0 auto;
+         padding: 3rem 1.5rem 4rem;
+      }
+      .topbar {
+         display: flex;
+         align-items: baseline;
+         justify-content: space-between;
+         gap: 1.5rem;
+         margin-bottom: 2rem;
+         flex-wrap: wrap;
+      }
+      .topbar .back {
+         color: var(--text-dim);
+         text-decoration: none;
+         font-size: 0.85rem;
+         letter-spacing: 0.06em;
+         text-transform: uppercase;
+         border-bottom: 1px solid transparent;
+         transition: color 0.15s, border-color 0.15s;
+      }
+      .topbar .back:hover { color: var(--text); border-bottom-color: var(--accent-3); }
+
+      .manifest-head h1 {
+         font-family: 'Playfair Display', serif;
+         font-weight: 500;
+         font-size: clamp(1.6rem, 3vw, 2.2rem);
+         line-height: 1.15;
+         margin: 0 0 0.6rem 0;
+      }
+      .manifest-meta {
+         color: var(--text-dim);
+         font-size: 0.9rem;
+         line-height: 1.55;
+         max-width: 720px;
+      }
+      .manifest-meta .meta-line { display: block; }
+      .manifest-meta .meta-line + .meta-line { margin-top: 0.2rem; }
+      .manifest-meta strong {
+         color: var(--text-mute);
+         font-weight: 500;
+         margin-right: 0.4rem;
+         text-transform: uppercase;
+         letter-spacing: 0.06em;
+         font-size: 0.72rem;
+      }
+
+      .toolbar {
+         display: flex;
+         align-items: center;
+         gap: 0.8rem;
+         margin: 2.5rem 0 1.2rem;
+         flex-wrap: wrap;
+      }
+      .toolbar .count {
+         color: var(--text-dim);
+         font-size: 0.85rem;
+         flex: 1;
+      }
+      .toolbar .count strong { color: var(--text); }
+      .pill-btn {
+         padding: 0.5rem 1rem;
+         border-radius: 999px;
+         background: rgba(255, 255, 255, 0.05);
+         border: 1px solid var(--card-border);
+         color: var(--text-dim);
+         font-family: inherit;
+         font-size: 0.82rem;
+         cursor: pointer;
+         transition: background 0.18s, color 0.18s, border-color 0.18s;
+      }
+      .pill-btn:hover {
+         background: rgba(124, 92, 255, 0.15);
+         color: var(--text);
+         border-color: rgba(124, 92, 255, 0.4);
+      }
+
+      .grid {
+         display: grid;
+         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+         gap: 1rem;
+      }
+      .canvas-card {
+         position: relative;
+         border: 1px solid var(--card-border);
+         border-radius: 14px;
+         overflow: hidden;
+         background: rgba(0, 0, 0, 0.18);
+         cursor: pointer;
+         transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+      }
+      .canvas-card:hover {
+         border-color: rgba(124, 92, 255, 0.55);
+         transform: translateY(-2px);
+         box-shadow: 0 14px 32px -16px rgba(124, 92, 255, 0.55);
+      }
+      .canvas-card input[type="checkbox"] {
+         position: absolute;
+         opacity: 0;
+         pointer-events: none;
+      }
+      .canvas-card.is-selected {
+         border-color: var(--accent-2);
+         box-shadow: 0 16px 38px -14px rgba(255, 92, 174, 0.55);
+      }
+      .thumb-wrap {
+         aspect-ratio: 3 / 4;
+         display: grid;
+         place-items: center;
+         background: linear-gradient(135deg, rgba(124, 92, 255, 0.08), rgba(255, 92, 174, 0.05));
+      }
+      .thumb-wrap img {
+         max-width: 100%;
+         max-height: 100%;
+         object-fit: contain;
+         display: block;
+      }
+      .thumb-placeholder {
+         color: var(--text-mute);
+         font-size: 0.78rem;
+      }
+      .card-meta {
+         padding: 0.55rem 0.7rem 0.7rem;
+         display: flex;
+         align-items: center;
+         justify-content: space-between;
+         gap: 0.5rem;
+      }
+      .card-label {
+         font-size: 0.82rem;
+         color: var(--text-dim);
+         overflow: hidden;
+         text-overflow: ellipsis;
+         white-space: nowrap;
+      }
+      .card-check {
+         width: 18px;
+         height: 18px;
+         border-radius: 6px;
+         border: 1.5px solid var(--card-border);
+         display: grid;
+         place-items: center;
+         flex-shrink: 0;
+         transition: background 0.15s, border-color 0.15s;
+      }
+      .canvas-card.is-selected .card-check {
+         background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+         border-color: transparent;
+      }
+      .card-check svg {
+         width: 12px; height: 12px;
+         stroke: #fff;
+         stroke-width: 3;
+         fill: none;
+         stroke-linecap: round;
+         stroke-linejoin: round;
+         opacity: 0;
+         transition: opacity 0.12s;
+      }
+      .canvas-card.is-selected .card-check svg { opacity: 1; }
+
+      .footer-bar {
+         position: sticky;
+         bottom: 1.4rem;
+         margin-top: 2.5rem;
+         padding: 1.2rem 1.4rem;
+         background: rgba(20, 14, 40, 0.78);
+         border: 1px solid var(--card-border);
+         border-radius: 18px;
+         backdrop-filter: blur(14px);
+         display: flex;
+         flex-wrap: wrap;
+         gap: 1.2rem;
+         align-items: center;
+         box-shadow: 0 22px 48px -18px rgba(0, 0, 0, 0.55);
+      }
+      .footer-bar .format-segments {
+         display: grid;
+         grid-template-columns: repeat(3, minmax(110px, 1fr));
+         gap: 0.4rem;
+         flex: 1 1 360px;
+      }
+      .footer-bar input[type="radio"] {
+         position: absolute; opacity: 0; pointer-events: none;
+      }
+      .footer-bar .format-segments label {
+         display: block;
+         padding: 0.6rem 0.7rem;
+         border: 1px solid var(--card-border);
+         border-radius: 10px;
+         text-align: center;
+         cursor: pointer;
+         font-size: 0.85rem;
+         color: var(--text-dim);
+         transition: background 0.18s, color 0.18s, border-color 0.18s;
+      }
+      .footer-bar .format-segments label:hover {
+         border-color: rgba(124, 92, 255, 0.55);
+         color: var(--text);
+      }
+      .footer-bar .format-segments input:checked + label {
+         background: linear-gradient(135deg, rgba(124, 92, 255, 0.85), rgba(255, 92, 174, 0.75));
+         color: #fff;
+         border-color: transparent;
+      }
+      .submit-btn {
+         padding: 0.85rem 1.6rem;
+         border: 0;
+         border-radius: 12px;
+         background: linear-gradient(110deg, var(--accent-1), var(--accent-2));
+         color: #fff;
+         font-family: inherit;
+         font-weight: 600;
+         font-size: 0.95rem;
+         cursor: pointer;
+         transition: transform 0.15s, filter 0.18s;
+         box-shadow: 0 12px 32px -12px rgba(124, 92, 255, 0.6);
+      }
+      .submit-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); }
+      .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+      .alerts { margin: 1rem 0; display: grid; gap: 0.4rem; }
+      .alert {
+         padding: 0.7rem 0.95rem;
+         border-radius: 10px;
+         font-size: 0.88rem;
+         border: 1px solid var(--card-border);
+         background: rgba(255, 255, 255, 0.04);
+         color: var(--text-dim);
+      }
+
+      #loader-overlay {
+         position: fixed;
+         inset: 0;
+         background: rgba(11, 16, 32, 0.78);
+         backdrop-filter: blur(10px);
+         display: none;
+         justify-content: center;
+         align-items: center;
+         z-index: 9999;
+      }
+      #loader-overlay.active { display: flex; }
+      .loader-card {
+         padding: 2.4rem 2.6rem;
+         border-radius: 22px;
+         text-align: center;
+         max-width: 90vw;
+         background: rgba(255, 255, 255, 0.05);
+         border: 1px solid var(--card-border);
+         backdrop-filter: blur(16px);
+         box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.6);
+      }
+      .loader-notes {
+         display: flex;
+         justify-content: center;
+         align-items: flex-end;
+         gap: 0.6rem;
+         font-size: 3rem;
+         line-height: 1;
+         height: 4.4rem;
+         margin-bottom: 1.1rem;
+      }
+      .loader-notes span {
+         display: inline-block;
+         animation: note-bounce 1.4s ease-in-out infinite;
+         filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.4));
+      }
+      .loader-notes span:nth-child(1) { animation-delay: 0.00s; color: var(--accent-3); }
+      .loader-notes span:nth-child(2) { animation-delay: 0.18s; color: var(--accent-1); }
+      .loader-notes span:nth-child(3) { animation-delay: 0.36s; color: var(--accent-2); }
+      .loader-notes span:nth-child(4) { animation-delay: 0.54s; color: #ffd166; }
+      @keyframes note-bounce {
+         0%, 100% { transform: translateY(0) rotate(-6deg); }
+         50%      { transform: translateY(-1.4rem) rotate(8deg); }
+      }
+      .loader-title {
+         font-family: 'Playfair Display', serif;
+         font-style: italic;
+         font-weight: 500;
+         color: var(--text);
+         font-size: 1.25rem;
+         margin: 0 0 0.4rem 0;
+      }
+      .loader-subtitle {
+         color: var(--text-dim);
+         font-size: 0.88rem;
+         margin: 0;
+      }
+   </style>
+</head>
+<body>
+   <div class="page">
+      <div class="topbar">
+         <a class="back" href="/">&larr; back</a>
+      </div>
+
+      <div class="manifest-head">
+         <h1>{{ manifest.label }}</h1>
+         <div class="manifest-meta">
+            {% if manifest.provider %}<span class="meta-line"><strong>Provider</strong>{{ manifest.provider }}</span>{% endif %}
+            {% if manifest.required_statement and manifest.required_statement != manifest.provider %}
+               <span class="meta-line"><strong>Attribution</strong>{{ manifest.required_statement }}</span>
+            {% endif %}
+            {% if manifest.rights %}<span class="meta-line"><strong>Rights</strong>
+               {% if manifest.rights.startswith('http') %}<a href="{{ manifest.rights }}" target="_blank" rel="noopener" style="color: var(--accent-3);">{{ manifest.rights }}</a>{% else %}{{ manifest.rights }}{% endif %}
+            </span>{% endif %}
+            <span class="meta-line"><strong>Pages</strong>{{ manifest.canvases | length }} canvases</span>
+         </div>
+      </div>
+
+      {% with messages = get_flashed_messages() %}
+         {% if messages %}
+            <div class="alerts">
+               {% for message in messages %}<div class="alert">{{ message }}</div>{% endfor %}
+            </div>
+         {% endif %}
+      {% endwith %}
+
+      <form id="iiif-form" method="POST" action="/iiif/convert">
+         {{ form.hidden_tag() }}
+         <input type="hidden" name="manifest_url" value="{{ manifest_url }}">
+
+         <div class="toolbar">
+            <div class="count"><strong id="sel-count">0</strong> of {{ manifest.canvases | length }} selected</div>
+            <button type="button" class="pill-btn" id="btn-all">Select all</button>
+            <button type="button" class="pill-btn" id="btn-none">Clear</button>
+         </div>
+
+         <div class="grid">
+            {% for canvas in manifest.canvases %}
+               <label class="canvas-card" data-index="{{ canvas.index }}">
+                  <input type="checkbox" name="canvas" value="{{ canvas.index }}">
+                  <div class="thumb-wrap">
+                     {% if canvas.thumbnail_url %}
+                        <img src="{{ canvas.thumbnail_url }}" loading="lazy" alt="page {{ canvas.index }}">
+                     {% else %}
+                        <span class="thumb-placeholder">no thumbnail</span>
+                     {% endif %}
+                  </div>
+                  <div class="card-meta">
+                     <span class="card-label">{{ canvas.index }} &middot; {{ canvas.label }}</span>
+                     <span class="card-check" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><polyline points="5 12 10 17 19 7"/></svg>
+                     </span>
+                  </div>
+               </label>
+            {% endfor %}
+         </div>
+
+         <div class="footer-bar">
+            <div class="format-segments" role="radiogroup">
+               <input type="radio" name="output_format" id="fmt-edit" value="edit" checked>
+               <label for="fmt-edit">Open editor</label>
+               <input type="radio" name="output_format" id="fmt-mei" value="mei">
+               <label for="fmt-mei">MEI</label>
+               <input type="radio" name="output_format" id="fmt-mxl" value="mxl">
+               <label for="fmt-mxl">MusicXML</label>
+            </div>
+            <button type="submit" class="submit-btn" id="submit-btn" disabled>Convert selected</button>
+         </div>
+      </form>
+   </div>
+
+   <div id="loader-overlay" role="status" aria-live="polite">
+      <div class="loader-card">
+         <div class="loader-notes" aria-hidden="true">
+            <span>&#9834;</span><span>&#9835;</span><span>&#9834;</span><span>&#9836;</span>
+         </div>
+         <p class="loader-title">Downloading images and running Audiveris&hellip;</p>
+         <p class="loader-subtitle">This can take several minutes for many pages. Please keep this tab open.</p>
+      </div>
+   </div>
+
+   <script>
+      (function () {
+         var cards = Array.prototype.slice.call(document.querySelectorAll('.canvas-card'));
+         var countEl = document.getElementById('sel-count');
+         var submitBtn = document.getElementById('submit-btn');
+         var form = document.getElementById('iiif-form');
+         var overlay = document.getElementById('loader-overlay');
+
+         function refresh() {
+            var n = 0;
+            cards.forEach(function (card) {
+               var cb = card.querySelector('input[type="checkbox"]');
+               if (cb.checked) {
+                  card.classList.add('is-selected');
+                  n += 1;
+               } else {
+                  card.classList.remove('is-selected');
+               }
+            });
+            countEl.textContent = n;
+            submitBtn.disabled = (n === 0);
+         }
+
+         cards.forEach(function (card) {
+            var cb = card.querySelector('input[type="checkbox"]');
+            cb.addEventListener('change', refresh);
+         });
+
+         document.getElementById('btn-all').addEventListener('click', function () {
+            cards.forEach(function (c) { c.querySelector('input').checked = true; });
+            refresh();
+         });
+         document.getElementById('btn-none').addEventListener('click', function () {
+            cards.forEach(function (c) { c.querySelector('input').checked = false; });
+            refresh();
+         });
+
+         form.addEventListener('submit', function () {
+            overlay.classList.add('active');
+            submitBtn.disabled = true;
+         });
+
+         refresh();
+      })();
+   </script>
+</body>
+</html>

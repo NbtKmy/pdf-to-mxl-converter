@@ -56,6 +56,90 @@ def musicxml_to_mei(mxl_path: Path) -> str:
     return result.stdout
 
 
+def _rename_xmlids(subtree: etree._Element, prefix: str) -> None:
+    """Prefix every ``xml:id`` in ``subtree`` and rewrite intra-subtree
+    fragment references (``#oldId``) to point at the renamed IDs.
+
+    Verovio assigns the same xml:id values (``P1``, ``s1m0``, ...) to every
+    MEI it produces from a single .mxl, so naively concatenating multiple
+    Verovio outputs would collide on those IDs.
+    """
+    xmlid = f"{{{XML_NS}}}id"
+    renames: dict[str, str] = {}
+    for el in subtree.iter():
+        old = el.get(xmlid)
+        if old is not None and old not in renames:
+            new = f"{prefix}{old}"
+            el.set(xmlid, new)
+            renames[old] = new
+    if not renames:
+        return
+    for el in subtree.iter():
+        for attr, value in list(el.attrib.items()):
+            if not value or "#" not in value:
+                continue
+            tokens = value.split()
+            rewritten = []
+            changed = False
+            for tok in tokens:
+                if tok.startswith("#") and tok[1:] in renames:
+                    rewritten.append(f"#{renames[tok[1:]]}")
+                    changed = True
+                else:
+                    rewritten.append(tok)
+            if changed:
+                el.set(attr, " ".join(rewritten))
+
+
+def merge_mei_movements(mei_xmls: list[str]) -> str:
+    """Stitch per-movement Verovio MEI outputs into one multi-mdiv MEI.
+
+    Audiveris exports one ``.mxl`` per movement when it detects a section
+    break. We concatenate the resulting per-mvt MEIs by appending each later
+    document's ``<mdiv>`` elements to the first document's ``<body>``. The
+    first document's ``<meiHead>`` is kept verbatim.
+
+    xml:ids inside appended mdivs are namespaced with an ``mN_`` prefix to
+    avoid colliding with the first MEI's own ids.
+
+    Positional pairing with OMR zones happens later in ``inject_facsimile``,
+    which walks ``.//measure`` in document order — so the order of
+    ``mei_xmls`` matters and must match book reading order.
+    """
+    if not mei_xmls:
+        raise ValueError("merge_mei_movements requires at least one MEI string")
+    if len(mei_xmls) == 1:
+        return mei_xmls[0]
+
+    parser = etree.XMLParser(remove_blank_text=False)
+    roots = [etree.fromstring(xml.encode("utf-8"), parser) for xml in mei_xmls]
+    base_body = roots[0].find(f".//{{{MEI_NS}}}body")
+    if base_body is None:
+        raise ValueError("First MEI has no <body>; cannot merge movements")
+
+    counter = 0
+    for mdiv in base_body.findall(f"{{{MEI_NS}}}mdiv"):
+        counter += 1
+        mdiv.set("n", str(counter))
+
+    for root in roots[1:]:
+        body = root.find(f".//{{{MEI_NS}}}body")
+        if body is None:
+            continue
+        for mdiv in body.findall(f"{{{MEI_NS}}}mdiv"):
+            counter += 1
+            mdiv.set("n", str(counter))
+            _rename_xmlids(mdiv, f"m{counter}_")
+            base_body.append(mdiv)
+
+    return etree.tostring(
+        roots[0],
+        pretty_print=True,
+        xml_declaration=True,
+        encoding="UTF-8",
+    ).decode("utf-8")
+
+
 def inject_facsimile(
     mei_xml: str,
     omr_data: OmrData,

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 from flask import (
     Flask,
@@ -19,17 +21,41 @@ from flask import (
     send_from_directory,
     url_for,
 )
+from flask_wtf.csrf import CSRFError, validate_csrf
 from werkzeug.utils import secure_filename
 
 from converter import (
     AudiverisResult,
+    IIIFError,
+    download_image,
+    fetch_manifest,
+    images_to_pdf,
     inject_facsimile,
+    merge_mei_movements,
     musicxml_to_mei,
     parse_omr,
     pdf_to_pngs,
     run_audiveris,
 )
 from formTemplate import imageUpload
+
+ALLOWED_IMAGE_EXTS = {'.png', '.jpg', '.jpeg'}
+ALLOWED_PDF_EXTS = {'.pdf'}
+ALLOWED_EXTS = ALLOWED_IMAGE_EXTS | ALLOWED_PDF_EXTS
+
+
+def _natural_key(name: str):
+    """Sort key that treats digit runs as integers: page2 < page10."""
+    return [int(t) if t.isdigit() else t.lower()
+            for t in re.split(r'(\d+)', name)]
+
+
+def _check_csrf() -> bool:
+    try:
+        validate_csrf(request.form.get('csrf_token'))
+    except CSRFError:
+        return False
+    return True
 
 # Paths inside the flask container. The named docker volumes share these with
 # the audiveris container, where they appear as /input and /output.
@@ -83,7 +109,6 @@ def _extract_log_tail(log: str, n: int = 3) -> str:
 def _diagnose_audiveris_output(
     result: AudiverisResult,
     output_dir: Path,
-    naked: str,
     job_id: str,
 ) -> list[str] | None:
     """Return a list of user-facing flash messages, or None on success.
@@ -91,7 +116,10 @@ def _diagnose_audiveris_output(
     Distinguishes:
     - Audiveris crashed (non-zero exit)
     - Audiveris ran but produced no .mxl at all (unreadable score)
-    - Audiveris produced .mxl files under unexpected names (multi-section split)
+
+    The "multi-section split" case (Audiveris emits ``<naked>.mvtN.mxl``
+    instead of one ``<naked>.mxl``) is no longer an error — the convert
+    handler stitches those into a multi-mdiv MEI.
     """
     if result.exit_code != 0:
         msgs = [f'Audiveris crashed (exit code {result.exit_code}).']
@@ -101,8 +129,7 @@ def _diagnose_audiveris_output(
         msgs.append(f'Full log saved under src/output/{job_id}/ (look for *.log).')
         return msgs
 
-    all_mxl = sorted(output_dir.glob('*.mxl'))
-    if not all_mxl:
+    if not list(output_dir.glob('*.mxl')):
         return [
             'Audiveris finished without crashing but could not extract any musical notation.',
             'This usually means hand-written, pre-modern (mensural / neumatic), '
@@ -110,16 +137,27 @@ def _diagnose_audiveris_output(
             f'Full log saved under src/output/{job_id}/ (look for *.log).',
         ]
 
-    expected = output_dir / f'{naked}.mxl'
-    if not expected.is_file():
-        names = ', '.join(p.name for p in all_mxl)
-        return [
-            f'Audiveris split this score into {len(all_mxl)} sections: {names}.',
-            'Multi-section scores (separate movements, parallel parts, or '
-            'multiple works in one book) are not yet supported in this version.',
-            'For now try converting one page or one work at a time.',
-        ]
     return None
+
+
+def _collect_mxl_files(output_dir: Path, naked: str) -> list[Path]:
+    """Return Audiveris's ``.mxl`` outputs in book reading order.
+
+    Single-movement scores produce one ``<naked>.mxl``. Multi-section scores
+    produce ``<naked>.mvt1.mxl``, ``<naked>.mvt2.mxl``, ... — sorted here by
+    integer mvt number (so mvt10 follows mvt9, not mvt1).
+    """
+    single = output_dir / f'{naked}.mxl'
+    if single.is_file():
+        return [single]
+    pattern = re.compile(rf'^{re.escape(naked)}\.mvt(\d+)\.mxl$')
+    candidates: list[tuple[int, Path]] = []
+    for path in output_dir.glob(f'{naked}.mvt*.mxl'):
+        m = pattern.match(path.name)
+        if m:
+            candidates.append((int(m.group(1)), path))
+    candidates.sort()
+    return [path for _, path in candidates]
 
 
 @server.route('/', methods=['GET'])
@@ -134,39 +172,99 @@ def convert():
     if not form.validate_on_submit():
         return render_template('index.html', form=form)
 
+    uploads = [u for u in (form.img.data or []) if u and u.filename]
+    if not uploads:
+        flash('No file selected.')
+        return redirect(url_for('main'))
+
     job_id = uuid.uuid4().hex
     input_dir = _job_input_dir(job_id)
     output_dir = _job_output_dir(job_id)
     input_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    upload = form.img.data
-    filename = secure_filename(upload.filename)
-    pdf_path = input_dir / filename
-    upload.save(pdf_path)
-    flash(f'{filename} uploaded.')
+    saved: list[Path] = []
+    for upload in uploads:
+        safe = secure_filename(upload.filename) or 'upload'
+        ext = Path(safe).suffix.lower()
+        if ext not in ALLOWED_EXTS:
+            flash(f'Unsupported file type "{ext}". Allowed: PDF, PNG, JPG.')
+            return redirect(url_for('main'))
+        dest = input_dir / safe
+        upload.save(dest)
+        saved.append(dest)
+
+    saved.sort(key=lambda p: _natural_key(p.name))
+
+    pdf_inputs = [p for p in saved if p.suffix.lower() in ALLOWED_PDF_EXTS]
+    img_inputs = [p for p in saved if p.suffix.lower() in ALLOWED_IMAGE_EXTS]
+
+    if pdf_inputs and img_inputs:
+        flash('Mixing PDFs and images in one upload is not supported. '
+              'Send a single PDF, or one or more images.')
+        return redirect(url_for('main'))
+    if len(pdf_inputs) > 1:
+        flash('Only one PDF per upload is supported. '
+              'Convert each PDF separately, or send the pages as images.')
+        return redirect(url_for('main'))
+
+    if pdf_inputs:
+        pdf_path = pdf_inputs[0]
+        flash(f'{pdf_path.name} uploaded.')
+    else:
+        # Wrap images into a synthetic PDF so the downstream pipeline stays
+        # a single code path (Audiveris + pymupdf re-render at OMR dims).
+        pdf_path = input_dir / f'{job_id}.pdf'
+        try:
+            images_to_pdf(img_inputs, pdf_path)
+        except Exception as exc:
+            flash(f'Failed to bundle {len(img_inputs)} images into a PDF: {exc}')
+            return redirect(url_for('main'))
+        # Remove individual image files so Audiveris's input glob only sees
+        # the bundled PDF.
+        for img in img_inputs:
+            img.unlink(missing_ok=True)
+        flash(f'Bundled {len(img_inputs)} image(s) into one document.')
 
     output_format = form.output_format.data or 'mei'
     token = request.form.get('download_token', '')
+    return _run_pipeline(job_id, pdf_path, output_format, token)
+
+
+def _run_pipeline(job_id: str, pdf_path: Path, output_format: str, token: str):
+    """Drive Audiveris → MEI → response for a job whose input PDF is staged.
+
+    Called by both the file-upload (``/convert``) and IIIF (``/iiif/convert``)
+    routes once they've assembled a single PDF in the job's input dir.
+    """
+    output_dir = _job_output_dir(job_id)
+    naked = os.path.splitext(pdf_path.name)[0]
 
     result = run_audiveris(
         input_dir=f'{AUDIVERIS_INPUT_ROOT}/{job_id}',
         output_dir=f'{AUDIVERIS_OUTPUT_ROOT}/{job_id}',
     )
-    naked = os.path.splitext(filename)[0]
 
-    diagnosis = _diagnose_audiveris_output(result, output_dir, naked, job_id)
+    diagnosis = _diagnose_audiveris_output(result, output_dir, job_id)
     if diagnosis is not None:
         for line in diagnosis:
             flash(line)
         return redirect(url_for('main'))
 
-    mxl_path = output_dir / f'{naked}.mxl'
+    mxl_files = _collect_mxl_files(output_dir, naked)
+    if not mxl_files:
+        flash('Audiveris produced MusicXML, but under an unexpected filename. '
+              f'Check src/output/{job_id}/.')
+        return redirect(url_for('main'))
 
     if output_format == 'mxl':
+        if len(mxl_files) > 1:
+            flash('This score was split into multiple movements; bundled MXL '
+                  'download is not supported. Pick MEI or the editor instead.')
+            return redirect(url_for('main'))
         return _attach_token(
             make_response(send_file(
-                mxl_path,
+                mxl_files[0],
                 as_attachment=True,
                 mimetype='application/vnd.recordare.musicxml',
             )),
@@ -174,7 +272,13 @@ def convert():
         )
 
     try:
-        mei_xml = musicxml_to_mei(mxl_path)
+        if len(mxl_files) == 1:
+            mei_xml = musicxml_to_mei(mxl_files[0])
+        else:
+            mei_xml = merge_mei_movements(
+                [musicxml_to_mei(p) for p in mxl_files]
+            )
+            flash(f'Stitched {len(mxl_files)} movements into one MEI.')
     except Exception as exc:
         flash(f'Failed to build MEI: {exc}')
         return redirect(url_for('main'))
@@ -210,6 +314,91 @@ def convert():
         )),
         token,
     )
+
+
+@server.route('/iiif/load', methods=['POST'])
+def iiif_load():
+    if not _check_csrf():
+        abort(400, description='CSRF check failed')
+    url = (request.form.get('manifest_url') or '').strip()
+    if not url:
+        flash('Please paste a IIIF manifest URL.')
+        return redirect(url_for('main'))
+    try:
+        manifest = fetch_manifest(url)
+    except IIIFError as exc:
+        flash(f'IIIF manifest could not be loaded: {exc}')
+        return redirect(url_for('main'))
+    if not manifest.canvases:
+        flash('That manifest contains no canvases (pages) to OMR.')
+        return redirect(url_for('main'))
+    return render_template(
+        'iiif_select.html',
+        form=imageUpload(),    # only used for csrf_token rendering
+        manifest=manifest,
+        manifest_url=url,
+    )
+
+
+@server.route('/iiif/convert', methods=['POST'])
+def iiif_convert():
+    if not _check_csrf():
+        abort(400, description='CSRF check failed')
+    url = (request.form.get('manifest_url') or '').strip()
+    try:
+        indices = sorted({int(v) for v in request.form.getlist('canvas')})
+    except ValueError:
+        flash('Invalid canvas selection.')
+        return redirect(url_for('main'))
+    if not url or not indices:
+        flash('Pick at least one page to OMR.')
+        return redirect(url_for('main'))
+
+    output_format = request.form.get('output_format') or 'edit'
+    token = request.form.get('download_token', '')
+
+    try:
+        manifest = fetch_manifest(url)
+    except IIIFError as exc:
+        flash(f'IIIF manifest could not be loaded: {exc}')
+        return redirect(url_for('main'))
+
+    by_index = {c.index: c for c in manifest.canvases}
+    selected = [by_index[i] for i in indices if i in by_index]
+    if not selected:
+        flash('Selected canvases were not found in the manifest.')
+        return redirect(url_for('main'))
+
+    job_id = uuid.uuid4().hex
+    input_dir = _job_input_dir(job_id)
+    output_dir = _job_output_dir(job_id)
+    input_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    image_paths: list[Path] = []
+    for canvas in selected:
+        ext = Path(urlparse(canvas.image_url).path).suffix.lower() or '.jpg'
+        if ext not in ALLOWED_IMAGE_EXTS:
+            ext = '.jpg'
+        dest = input_dir / f'canvas-{canvas.index:04d}{ext}'
+        try:
+            download_image(canvas, dest)
+        except IIIFError as exc:
+            flash(f'Image download failed: {exc}')
+            return redirect(url_for('main'))
+        image_paths.append(dest)
+
+    pdf_path = input_dir / f'{job_id}.pdf'
+    try:
+        images_to_pdf(image_paths, pdf_path)
+    except Exception as exc:
+        flash(f'Failed to bundle IIIF images into a PDF: {exc}')
+        return redirect(url_for('main'))
+    for img in image_paths:
+        img.unlink(missing_ok=True)
+    flash(f'Downloaded {len(selected)} page(s) from {manifest.label}.')
+
+    return _run_pipeline(job_id, pdf_path, output_format, token)
 
 
 def _resolve_job_artifact(job_id: str, suffix: str) -> Path:

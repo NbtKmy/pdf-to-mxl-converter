@@ -1,12 +1,12 @@
 from flask_wtf import FlaskForm
-from flask_wtf.file import FileAllowed, FileField, FileRequired
-from wtforms import RadioField
+from wtforms import MultipleFileField, RadioField
+from wtforms.validators import InputRequired
 
 
 class imageUpload(FlaskForm):
-    img = FileField(
-        'image',
-        validators=[FileRequired(), FileAllowed(['pdf'], 'PDF file only!')],
+    img = MultipleFileField(
+        'score files',
+        validators=[InputRequired()],
     )
     output_format = RadioField(
         'Output format',

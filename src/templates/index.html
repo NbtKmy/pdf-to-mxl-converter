@@ -213,6 +213,71 @@
       .dropzone.has-file .dropzone-filename { display: block; }
       .dropzone.has-file .dropzone-sub { display: none; }
 
+      .source-tabs {
+         display: grid;
+         grid-template-columns: 1fr 1fr;
+         gap: 0.4rem;
+         margin-bottom: 1.4rem;
+         padding: 0.3rem;
+         background: rgba(0, 0, 0, 0.18);
+         border: 1px solid var(--card-border);
+         border-radius: 14px;
+      }
+      .source-tabs input[type="radio"] {
+         position: absolute;
+         opacity: 0;
+         pointer-events: none;
+      }
+      .source-tabs label {
+         display: block;
+         padding: 0.7rem 0.8rem;
+         border-radius: 10px;
+         text-align: center;
+         cursor: pointer;
+         font-weight: 500;
+         font-size: 0.92rem;
+         color: var(--text-dim);
+         transition: background 0.18s, color 0.18s;
+      }
+      .source-tabs label:hover { color: var(--text); }
+      .source-tabs input:checked + label {
+         background: linear-gradient(135deg, rgba(124, 92, 255, 0.85), rgba(255, 92, 174, 0.7));
+         color: #fff;
+         box-shadow: 0 8px 22px -10px rgba(124, 92, 255, 0.65);
+      }
+
+      .source-pane {
+         display: none;
+         grid-column: 1 / -1;
+         padding-top: 1rem;
+      }
+      #src-files:checked ~ .source-pane[data-source="files"] { display: block; }
+      #src-iiif:checked  ~ .source-pane[data-source="iiif"]  { display: block; }
+
+      .iiif-url-input {
+         width: 100%;
+         padding: 0.95rem 1.1rem;
+         background: rgba(0, 0, 0, 0.22);
+         border: 1px solid var(--card-border);
+         border-radius: 14px;
+         color: var(--text);
+         font-family: inherit;
+         font-size: 0.95rem;
+         outline: none;
+         transition: border-color 0.18s, background 0.18s;
+      }
+      .iiif-url-input::placeholder { color: var(--text-mute); }
+      .iiif-url-input:focus {
+         border-color: var(--accent-1);
+         background: rgba(124, 92, 255, 0.07);
+      }
+      .iiif-hint {
+         color: var(--text-mute);
+         font-size: 0.82rem;
+         margin: 0.6rem 0 0;
+         line-height: 1.5;
+      }
+
       .format-row {
          margin-top: 1.8rem;
       }
@@ -415,58 +480,88 @@
          </p>
       </div>
 
-      <form id="upload-form" class="card" method="POST" action="/convert" enctype="multipart/form-data">
-         {{ form.hidden_tag() }}
-         <input type="hidden" name="download_token" id="download-token">
+      <div class="card">
+         <div class="source-tabs">
+            <input type="radio" name="src-tab" id="src-files" checked>
+            <label for="src-files">Upload files</label>
+            <input type="radio" name="src-tab" id="src-iiif">
+            <label for="src-iiif">IIIF manifest URL</label>
 
-         <span class="field-label">Score file</span>
-         <label class="dropzone" id="dropzone">
-            <div class="dropzone-icon" aria-hidden="true">
-               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 16V4"/><path d="M5 11l7-7 7 7"/><path d="M5 20h14"/>
-               </svg>
+            <div class="source-pane" data-source="files">
+               <form id="upload-form" method="POST" action="/convert" enctype="multipart/form-data">
+                  {{ form.hidden_tag() }}
+                  <input type="hidden" name="download_token" id="download-token">
+
+                  <span class="field-label">Score file</span>
+                  <label class="dropzone" id="dropzone">
+                     <div class="dropzone-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                           <path d="M12 16V4"/><path d="M5 11l7-7 7 7"/><path d="M5 20h14"/>
+                        </svg>
+                     </div>
+                     <p class="dropzone-title">Drop a PDF or page images here</p>
+                     <p class="dropzone-sub">or click to browse &middot; PDF, PNG, JPG &middot; multiple images allowed</p>
+                     <p class="dropzone-filename" id="dropzone-filename"></p>
+                     {{ form.img(id="img", accept=".pdf,.png,.jpg,.jpeg", multiple=True) }}
+                  </label>
+
+                  <div class="format-row">
+                     <span class="field-label">Output format</span>
+                     <div class="format-segments" role="radiogroup">
+                        <input type="radio" name="output_format" id="fmt-edit" value="edit" checked>
+                        <label for="fmt-edit">
+                           <span class="pill-title">Open editor</span>
+                           <span class="pill-sub">view image + score</span>
+                        </label>
+                        <input type="radio" name="output_format" id="fmt-mei" value="mei">
+                        <label for="fmt-mei">
+                           <span class="pill-title">MEI</span>
+                           <span class="pill-sub">download .mei</span>
+                        </label>
+                        <input type="radio" name="output_format" id="fmt-mxl" value="mxl">
+                        <label for="fmt-mxl">
+                           <span class="pill-title">MusicXML</span>
+                           <span class="pill-sub">download .mxl</span>
+                        </label>
+                     </div>
+                  </div>
+
+                  <div class="submit-row">
+                     <button type="submit" class="submit-btn" id="submit-btn">Convert</button>
+                  </div>
+
+                  {% if form.img.errors or form.output_format.errors %}
+                     <div class="alerts">
+                        {% for error in form.img.errors %}
+                           <div class="alert is-error">{{ error }}</div>
+                        {% endfor %}
+                        {% for error in form.output_format.errors %}
+                           <div class="alert is-error">{{ error }}</div>
+                        {% endfor %}
+                     </div>
+                  {% endif %}
+               </form>
             </div>
-            <p class="dropzone-title">Drop your PDF here</p>
-            <p class="dropzone-sub">or click to browse &middot; PDF only</p>
-            <p class="dropzone-filename" id="dropzone-filename"></p>
-            {{ form.img(id="img", accept=".pdf") }}
-         </label>
 
-         <div class="format-row">
-            <span class="field-label">Output format</span>
-            <div class="format-segments" role="radiogroup">
-               <input type="radio" name="output_format" id="fmt-edit" value="edit" checked>
-               <label for="fmt-edit">
-                  <span class="pill-title">Open editor</span>
-                  <span class="pill-sub">view image + score</span>
-               </label>
-               <input type="radio" name="output_format" id="fmt-mei" value="mei">
-               <label for="fmt-mei">
-                  <span class="pill-title">MEI</span>
-                  <span class="pill-sub">download .mei</span>
-               </label>
-               <input type="radio" name="output_format" id="fmt-mxl" value="mxl">
-               <label for="fmt-mxl">
-                  <span class="pill-title">MusicXML</span>
-                  <span class="pill-sub">download .mxl</span>
-               </label>
+            <div class="source-pane" data-source="iiif">
+               <form id="iiif-form" method="POST" action="/iiif/load">
+                  {{ form.hidden_tag() }}
+
+                  <span class="field-label">IIIF Presentation manifest URL</span>
+                  <input type="url" name="manifest_url" class="iiif-url-input"
+                         placeholder="https://example.org/iiif/manifest"
+                         required autocomplete="off" spellcheck="false">
+                  <p class="iiif-hint">
+                     Paste a IIIF Presentation API v2 or v3 manifest URL.
+                     Page thumbnails will load on the next screen so you can pick which canvases to OMR.
+                  </p>
+
+                  <div class="submit-row">
+                     <button type="submit" class="submit-btn">Load manifest</button>
+                  </div>
+               </form>
             </div>
          </div>
-
-         <div class="submit-row">
-            <button type="submit" class="submit-btn" id="submit-btn">Convert</button>
-         </div>
-
-         {% if form.img.errors or form.output_format.errors %}
-            <div class="alerts">
-               {% for error in form.img.errors %}
-                  <div class="alert is-error">{{ error }}</div>
-               {% endfor %}
-               {% for error in form.output_format.errors %}
-                  <div class="alert is-error">{{ error }}</div>
-               {% endfor %}
-            </div>
-         {% endif %}
 
          {% with messages = get_flashed_messages() %}
             {% if messages %}
@@ -477,7 +572,7 @@
                </div>
             {% endif %}
          {% endwith %}
-      </form>
+      </div>
 
       <footer>
          Runs locally via Docker Compose &middot; Audiveris is built from upstream sources inside the container.
@@ -508,7 +603,14 @@
 
          function setFilename() {
             if (fileInput.files && fileInput.files.length > 0) {
-               filenameEl.textContent = fileInput.files[0].name;
+               var n = fileInput.files.length;
+               if (n === 1) {
+                  filenameEl.textContent = fileInput.files[0].name;
+               } else {
+                  var names = [];
+                  for (var i = 0; i < n; i++) names.push(fileInput.files[i].name);
+                  filenameEl.textContent = n + ' files · ' + names.join(', ');
+               }
                dropzone.classList.add('has-file');
             } else {
                filenameEl.textContent = '';
