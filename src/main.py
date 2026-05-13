@@ -494,6 +494,17 @@ def editor_assets(job_id: str, filename: str):
     return send_from_directory(assets_dir, filename)
 
 
+@server.route('/edit/<job_id>/osd-images/<path:filename>')
+def editor_osd_images(job_id: str, filename: str):
+    # OpenSeadragon's UI sprite images (zoom/home/fullscreen buttons).
+    # Bundled into editor/public/osd-images so they don't depend on a CDN.
+    del job_id
+    images_dir = EDITOR_DIST / 'osd-images'
+    if not images_dir.is_dir():
+        abort(404)
+    return send_from_directory(images_dir, filename)
+
+
 @server.route('/health')
 def health():
     return jsonify(status='ok')

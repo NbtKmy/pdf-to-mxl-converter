@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import OpenSeadragon from 'openseadragon'
 import createVerovioModule from 'verovio/wasm'
 import { VerovioToolkit } from 'verovio/esm'
 import './App.css'
@@ -19,6 +20,13 @@ type Facsimile = {
   zoneToSurface: Map<string, number>
   measureToZone: Map<string, string>
   zoneToMeasure: Map<string, string>
+}
+type Provenance = {
+  title: string | null
+  provider: string | null
+  rights: string | null
+  attribution: string | null
+  manifestUrl: string | null
 }
 
 const MEI_NS = 'http://www.music-encoding.org/ns/mei'
@@ -101,19 +109,76 @@ function listMeasureIds(xmlDoc: XMLDocument): string[] {
   return out
 }
 
+/** Direct-child lookup by MEI-namespace local name. */
+function childByTag(parent: Element | null, tag: string): Element | null {
+  if (!parent) return null
+  for (let i = 0; i < parent.children.length; i++) {
+    const c = parent.children[i]
+    if (c.namespaceURI === MEI_NS && c.localName === tag) return c
+  }
+  return null
+}
+
+function textOf(el: Element | null): string | null {
+  const t = el?.textContent?.trim() ?? ''
+  return t || null
+}
+
+/** Pull IIIF-derived provenance out of the meiHead/fileDesc/sourceDesc/source
+ *  block injected by the backend's ``inject_meihead_metadata``. */
+function parseProvenance(doc: XMLDocument): Provenance | null {
+  const source = doc.getElementsByTagNameNS(MEI_NS, 'source')[0] ?? null
+  if (!source) return null
+
+  const srcTitleStmt = childByTag(source, 'titleStmt')
+  const title = textOf(childByTag(srcTitleStmt, 'title'))
+
+  const respStmt = childByTag(srcTitleStmt, 'respStmt')
+  const corp = childByTag(respStmt, 'corpName')
+  const provider = textOf(corp)
+
+  const pubStmt = childByTag(source, 'pubStmt')
+  const availability = childByTag(pubStmt, 'availability')
+  const rights = textOf(childByTag(availability, 'useRestrict'))
+
+  let attribution: string | null = null
+  if (pubStmt) {
+    for (let i = 0; i < pubStmt.children.length; i++) {
+      const c = pubStmt.children[i]
+      if (c.namespaceURI === MEI_NS && c.localName === 'respStmt') {
+        const name = childByTag(c, 'name')
+        if (name) {
+          attribution = textOf(name)
+          break
+        }
+      }
+    }
+  }
+
+  const bibl = childByTag(source, 'bibl')
+  const ref = childByTag(bibl, 'ref')
+  const manifestUrl = ref?.getAttribute('target') ?? null
+
+  if (!title && !provider && !rights && !attribution && !manifestUrl) return null
+  return { title, provider, rights, attribution, manifestUrl }
+}
+
 function App() {
   const [status, setStatus] = useState<Status>('init')
   const [error, setError] = useState<string | null>(null)
   const [meiText, setMeiText] = useState<string | null>(null)
   const [meiDoc, setMeiDoc] = useState<XMLDocument | null>(null)
   const [facsimile, setFacsimile] = useState<Facsimile | null>(null)
+  const [provenance, setProvenance] = useState<Provenance | null>(null)
   const [scorePage, setScorePage] = useState(1)
   const [scorePageCount, setScorePageCount] = useState(0)
   const [imagePage, setImagePage] = useState(1)
   const [selectedMeasureId, setSelectedMeasureId] = useState<string | null>(null)
   const toolkitRef = useRef<VerovioToolkit | null>(null)
   const svgContainerRef = useRef<HTMLDivElement | null>(null)
-  const imageRef = useRef<HTMLImageElement | null>(null)
+  const osdHostRef = useRef<HTMLDivElement | null>(null)
+  const osdViewerRef = useRef<OpenSeadragon.Viewer | null>(null)
+  const overlayElsRef = useRef<Map<string, HTMLDivElement>>(new Map())
 
   const jobId = useMemo(() => getJobId(), [])
   const measureIds = useMemo(() => (meiDoc ? listMeasureIds(meiDoc) : []), [meiDoc])
@@ -155,6 +220,7 @@ function App() {
         setMeiText(text)
         setMeiDoc(xmlDoc)
         setFacsimile(facs)
+        setProvenance(parseProvenance(xmlDoc))
         setScorePageCount(toolkit.getPageCount())
         setScorePage(1)
         setImagePage(facs.surfaceOrder[0] ?? 1)
@@ -197,6 +263,91 @@ function App() {
     [facsimile, imagePage],
   )
 
+  // Initialize OSD viewer once when the host div is mounted.
+  useEffect(() => {
+    if (!osdHostRef.current || osdViewerRef.current) return
+    osdViewerRef.current = OpenSeadragon({
+      element: osdHostRef.current,
+      prefixUrl: 'osd-images/',
+      tileSources: undefined,
+      showNavigationControl: true,
+      showNavigator: false,
+      navigationControlAnchor: OpenSeadragon.ControlAnchor.TOP_RIGHT,
+      gestureSettingsMouse: { clickToZoom: false, dblClickToZoom: true },
+      minZoomImageRatio: 0.8,
+      maxZoomPixelRatio: 4,
+      visibilityRatio: 0.6,
+      animationTime: 0.4,
+      springStiffness: 7,
+      immediateRender: true,
+    })
+    return () => {
+      osdViewerRef.current?.destroy()
+      osdViewerRef.current = null
+    }
+  }, [])
+
+  // Load the current surface's image into OSD and (re)draw zone overlays.
+  useEffect(() => {
+    const viewer = osdViewerRef.current
+    if (!viewer || !currentSurface || !currentSurface.graphicURL) return
+
+    overlayElsRef.current.clear()
+    viewer.clearOverlays()
+
+    const onOpen = () => {
+      if (!currentSurface) return
+      const { width: imgW, height: imgH } = currentSurface
+      if (!imgW || !imgH) return
+      currentSurface.zones.forEach((b, zoneId) => {
+        const el = document.createElement('div')
+        el.className = 'osd-zone'
+        el.title = zoneId
+        el.dataset.zoneId = zoneId
+        el.addEventListener('click', (ev) => {
+          ev.stopPropagation()
+          if (!facsimile) return
+          const mid = facsimile.zoneToMeasure.get(zoneId)
+          if (!mid) return
+          handleMeasureSelect(mid)
+          const tk = toolkitRef.current
+          const fn = (tk as unknown as { getPageWithElement?: (id: string) => number } | null)
+            ?.getPageWithElement
+          if (typeof fn === 'function') {
+            const page = fn.call(tk, mid)
+            if (page && page !== scorePage) setScorePage(page)
+          }
+        })
+        overlayElsRef.current.set(zoneId, el)
+        const rect = viewer.viewport.imageToViewportRectangle(
+          b.ulx,
+          b.uly,
+          b.lrx - b.ulx,
+          b.lry - b.uly,
+        )
+        viewer.addOverlay({ element: el, location: rect })
+      })
+      applySelectedZoneClass()
+    }
+    viewer.addOnceHandler('open', onOpen)
+    // OSD accepts a tile-source instance at runtime; the typings demand the
+    // ``{tileSource}`` wrapper, so cast through unknown.
+    viewer.open(
+      new OpenSeadragon.ImageTileSource({ url: currentSurface.graphicURL }) as unknown as Parameters<typeof viewer.open>[0],
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSurface?.graphicURL, currentSurface?.n])
+
+  const applySelectedZoneClass = useCallback(() => {
+    overlayElsRef.current.forEach((el, zoneId) => {
+      el.classList.toggle('osd-zone-selected', zoneId === selectedZoneId)
+    })
+  }, [selectedZoneId])
+
+  useEffect(() => {
+    applySelectedZoneClass()
+  }, [selectedZoneId, applySelectedZoneClass])
+
   const onSvgClick = (e: React.MouseEvent<HTMLDivElement>) => {
     let target = e.target as HTMLElement | null
     while (target && target !== e.currentTarget) {
@@ -220,22 +371,6 @@ function App() {
     }
   }
 
-  const onZoneClick = (zoneId: string) => {
-    if (!facsimile) return
-    const measureId = facsimile.zoneToMeasure.get(zoneId)
-    if (!measureId) return
-    handleMeasureSelect(measureId)
-    // try to scroll Verovio to the page containing this measure
-    const tk = toolkitRef.current
-    // verovio API has getPageWithElement but typings are minimal; cast through unknown
-    const fn = (tk as unknown as { getPageWithElement?: (id: string) => number } | null)
-      ?.getPageWithElement
-    if (typeof fn === 'function') {
-      const page = fn.call(tk, measureId)
-      if (page && page !== scorePage) setScorePage(page)
-    }
-  }
-
   const totalSurfaces = facsimile?.surfaceOrder.length ?? 0
   const totalMeasures = measureIds.length
   const assignedCount = facsimile?.measureToZone.size ?? 0
@@ -255,6 +390,47 @@ function App() {
         )}
         <a className="muted right" href="/">← New conversion</a>
       </header>
+
+      {provenance && (
+        <div className="provenance">
+          {provenance.title && (
+            <span className="prov-title" title={provenance.title}>{provenance.title}</span>
+          )}
+          {provenance.provider && (
+            <span className="prov-chip">
+              <span className="prov-label">Provider</span>
+              <span>{provenance.provider}</span>
+            </span>
+          )}
+          {provenance.rights && (
+            <span className="prov-chip">
+              <span className="prov-label">Rights</span>
+              {provenance.rights.startsWith('http') ? (
+                <a href={provenance.rights} target="_blank" rel="noreferrer">
+                  {provenance.rights.replace(/^https?:\/\//, '')}
+                </a>
+              ) : (
+                <span>{provenance.rights}</span>
+              )}
+            </span>
+          )}
+          {provenance.attribution && (
+            <span className="prov-chip prov-attr" title={provenance.attribution}>
+              {provenance.attribution}
+            </span>
+          )}
+          {provenance.manifestUrl && (
+            <a
+              className="prov-manifest"
+              href={provenance.manifestUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              IIIF manifest ↗
+            </a>
+          )}
+        </div>
+      )}
 
       {status === 'loading' && <div className="banner">Loading MEI and Verovio…</div>}
       {status === 'error' && <div className="banner banner-error">{error}</div>}
@@ -285,39 +461,9 @@ function App() {
               </span>
             )}
           </div>
-          <div className="pane-body">
-            {currentSurface && currentSurface.graphicURL ? (
-              <div className="image-wrap">
-                <img
-                  ref={imageRef}
-                  src={currentSurface.graphicURL}
-                  alt={`source page ${currentSurface.n}`}
-                  draggable={false}
-                />
-                {Array.from(currentSurface.zones.entries()).map(([zoneId, b]) => {
-                  const w = currentSurface.width
-                  const h = currentSurface.height
-                  if (!w || !h) return null
-                  const isSelected = zoneId === selectedZoneId
-                  return (
-                    <button
-                      key={zoneId}
-                      onClick={() => onZoneClick(zoneId)}
-                      title={zoneId}
-                      className={isSelected ? 'zone zone-selected' : 'zone'}
-                      style={{
-                        left: `${(b.ulx / w) * 100}%`,
-                        top: `${(b.uly / h) * 100}%`,
-                        width: `${((b.lrx - b.ulx) / w) * 100}%`,
-                        height: `${((b.lry - b.uly) / h) * 100}%`,
-                      }}
-                    />
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="empty">(no image)</div>
-            )}
+          <div className="pane-body pane-body-osd">
+            <div ref={osdHostRef} className="osd-host" />
+            {!currentSurface?.graphicURL && <div className="empty osd-empty">(no image)</div>}
           </div>
         </section>
 
