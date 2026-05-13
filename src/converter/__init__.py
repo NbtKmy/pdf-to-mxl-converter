@@ -8,7 +8,12 @@ from .iiif_loader import (
     parse_manifest,
 )
 from .image_loader import images_to_pdf, pdf_to_pngs
-from .mei_writer import inject_facsimile, merge_mei_movements, musicxml_to_mei
+from .mei_writer import (
+    inject_facsimile,
+    inject_meihead_metadata,
+    merge_mei_movements,
+    musicxml_to_mei,
+)
 from .omr_parser import (
     MeasureZone,
     OmrData,
@@ -32,6 +37,7 @@ __all__ = [
     "fetch_manifest",
     "images_to_pdf",
     "inject_facsimile",
+    "inject_meihead_metadata",
     "iter_zones",
     "merge_mei_movements",
     "musicxml_to_mei",

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from lxml import etree
 
+from .iiif_loader import IIIFManifest
 from .omr_parser import OmrData, iter_zones
 
 VEROVIO_TIMEOUT_SECONDS = 180
@@ -213,6 +214,90 @@ def inject_facsimile(
     measures = root.findall(f".//{{{MEI_NS}}}measure")
     for measure, zone in zip(measures, all_zones):
         measure.set("facs", f"#{zone_id_by_key[(zone.sheet_num, zone.stack_id)]}")
+
+    return etree.tostring(
+        root,
+        pretty_print=True,
+        xml_declaration=True,
+        encoding="UTF-8",
+    ).decode("utf-8")
+
+
+def _mei(tag: str) -> str:
+    return f"{{{MEI_NS}}}{tag}"
+
+
+def _ensure_child(parent: etree._Element, tag: str, position: int | None = None) -> etree._Element:
+    existing = parent.find(_mei(tag))
+    if existing is not None:
+        return existing
+    el = etree.Element(_mei(tag))
+    if position is None:
+        parent.append(el)
+    else:
+        parent.insert(position, el)
+    return el
+
+
+def inject_meihead_metadata(
+    mei_xml: str,
+    manifest: IIIFManifest,
+    manifest_url: str | None = None,
+) -> str:
+    """Populate ``<meiHead>`` with metadata sourced from an IIIF manifest.
+
+    Verovio's auto-generated ``meiHead`` carries no real metadata, so we:
+    - set ``fileDesc/titleStmt/title`` to the manifest label (the only
+      sensible default for "what is this MEI file")
+    - replace ``fileDesc/sourceDesc`` with one ``<source>`` element that
+      records provider, rights, required attribution, and the manifest URL
+      as a back-link
+    """
+    parser = etree.XMLParser(remove_blank_text=False)
+    root = etree.fromstring(mei_xml.encode("utf-8"), parser)
+    head = root.find(_mei("meiHead"))
+    if head is None:
+        head = etree.Element(_mei("meiHead"))
+        root.insert(0, head)
+
+    file_desc = _ensure_child(head, "fileDesc", position=0)
+    title_stmt = _ensure_child(file_desc, "titleStmt", position=0)
+    title = _ensure_child(title_stmt, "title")
+    title.text = manifest.label or "(untitled)"
+
+    for existing in file_desc.findall(_mei("sourceDesc")):
+        file_desc.remove(existing)
+
+    source_desc = etree.SubElement(file_desc, _mei("sourceDesc"))
+    source = etree.SubElement(source_desc, _mei("source"))
+
+    src_title_stmt = etree.SubElement(source, _mei("titleStmt"))
+    src_title = etree.SubElement(src_title_stmt, _mei("title"))
+    src_title.text = manifest.label or "(untitled)"
+    if manifest.provider:
+        resp_stmt = etree.SubElement(src_title_stmt, _mei("respStmt"))
+        corp = etree.SubElement(resp_stmt, _mei("corpName"))
+        corp.set("role", "provider")
+        corp.text = manifest.provider
+
+    if manifest.rights or manifest.required_statement:
+        pub_stmt = etree.SubElement(source, _mei("pubStmt"))
+        if manifest.rights:
+            availability = etree.SubElement(pub_stmt, _mei("availability"))
+            use = etree.SubElement(availability, _mei("useRestrict"))
+            use.text = manifest.rights
+        if manifest.required_statement:
+            attribution = etree.SubElement(pub_stmt, _mei("respStmt"))
+            resp = etree.SubElement(attribution, _mei("resp"))
+            resp.text = "attribution"
+            name = etree.SubElement(attribution, _mei("name"))
+            name.text = manifest.required_statement
+
+    if manifest_url:
+        bibl = etree.SubElement(source, _mei("bibl"))
+        ref = etree.SubElement(bibl, _mei("ref"))
+        ref.set("target", manifest_url)
+        ref.text = "IIIF Manifest"
 
     return etree.tostring(
         root,

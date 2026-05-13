@@ -27,10 +27,12 @@ from werkzeug.utils import secure_filename
 from converter import (
     AudiverisResult,
     IIIFError,
+    IIIFManifest,
     download_image,
     fetch_manifest,
     images_to_pdf,
     inject_facsimile,
+    inject_meihead_metadata,
     merge_mei_movements,
     musicxml_to_mei,
     parse_omr,
@@ -231,11 +233,20 @@ def convert():
     return _run_pipeline(job_id, pdf_path, output_format, token)
 
 
-def _run_pipeline(job_id: str, pdf_path: Path, output_format: str, token: str):
+def _run_pipeline(
+    job_id: str,
+    pdf_path: Path,
+    output_format: str,
+    token: str,
+    iiif_manifest: IIIFManifest | None = None,
+    iiif_manifest_url: str | None = None,
+):
     """Drive Audiveris → MEI → response for a job whose input PDF is staged.
 
     Called by both the file-upload (``/convert``) and IIIF (``/iiif/convert``)
-    routes once they've assembled a single PDF in the job's input dir.
+    routes once they've assembled a single PDF in the job's input dir. The
+    IIIF route passes ``iiif_manifest`` so the resulting MEI can carry
+    provenance metadata (label, rights, provider, attribution) in meiHead.
     """
     output_dir = _job_output_dir(job_id)
     naked = os.path.splitext(pdf_path.name)[0]
@@ -296,6 +307,15 @@ def _run_pipeline(job_id: str, pdf_path: Path, output_format: str, token: str):
         except Exception as exc:
             flash(f'Facsimile zones could not be injected ({exc}); '
                   'returning MEI without zones.')
+
+    if iiif_manifest is not None:
+        try:
+            mei_xml = inject_meihead_metadata(
+                mei_xml, iiif_manifest, iiif_manifest_url
+            )
+        except Exception as exc:
+            flash(f'IIIF metadata could not be added to meiHead ({exc}); '
+                  'returning MEI without provenance.')
 
     mei_path = output_dir / f'{naked}.mei'
     mei_path.write_text(mei_xml, encoding='utf-8')
@@ -398,7 +418,14 @@ def iiif_convert():
         img.unlink(missing_ok=True)
     flash(f'Downloaded {len(selected)} page(s) from {manifest.label}.')
 
-    return _run_pipeline(job_id, pdf_path, output_format, token)
+    return _run_pipeline(
+        job_id,
+        pdf_path,
+        output_format,
+        token,
+        iiif_manifest=manifest,
+        iiif_manifest_url=url,
+    )
 
 
 def _resolve_job_artifact(job_id: str, suffix: str) -> Path:
